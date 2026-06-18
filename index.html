@@ -30,6 +30,7 @@
           <h1>我的日记</h1>
         </div>
         <div class="top-actions">
+          <p class="sync-summary" id="syncStatus">本机保存</p>
           <p class="summary"><span id="entryCount">0</span> 篇</p>
           <button class="ghost-button" id="logoutButton" type="button">锁定</button>
         </div>
@@ -60,27 +61,58 @@
           </div>
 
           <div class="field">
+            <label for="entryCategory">分类</label>
+            <input id="entryCategory" type="text" maxlength="24" list="categoryOptions" placeholder="生活、账务、家庭、工作...">
+            <datalist id="categoryOptions"></datalist>
+          </div>
+
+          <div class="field">
             <label for="entryContent">内容</label>
             <textarea id="entryContent" rows="9" maxlength="2000" required></textarea>
           </div>
 
           <div class="field">
             <label for="entryImage">图片</label>
-            <input id="entryImage" type="file" accept="image/*">
+            <input id="entryImage" type="file" accept="image/*" multiple>
           </div>
 
-          <figure class="image-preview" id="imagePreview" hidden>
-            <img id="previewImage" alt="日记图片预览">
-            <button class="ghost-button" id="removeImage" type="button">移除图片</button>
-          </figure>
+          <div class="image-preview-grid" id="imagePreview" hidden></div>
 
-          <button class="primary-button" type="submit">保存日记</button>
+          <section class="link-editor" aria-label="链接附件">
+            <div class="form-row">
+              <div class="field">
+                <label for="linkTitle">链接名称</label>
+                <input id="linkTitle" type="text" maxlength="60" placeholder="水费账户">
+              </div>
+              <div class="field">
+                <label for="linkUrl">网址</label>
+                <input id="linkUrl" type="url" placeholder="https://...">
+              </div>
+            </div>
+            <button class="ghost-button" id="addLinkButton" type="button">添加链接</button>
+            <div class="link-list" id="linkList"></div>
+          </section>
+
+          <div class="form-actions">
+            <button class="primary-button" type="submit" id="saveEntryButton">保存日记</button>
+            <button class="ghost-button" id="cancelEditButton" type="button" hidden>取消编辑</button>
+          </div>
+          <p class="save-status" id="saveStatus" role="status"></p>
         </form>
 
         <section class="entries-panel" aria-labelledby="entriesTitle">
           <div class="panel-header">
             <h2 id="entriesTitle">日记列表</h2>
             <button class="danger-button" id="clearEntries" type="button">清空</button>
+          </div>
+          <div class="filters" aria-label="筛选日记">
+            <input id="searchInput" type="search" placeholder="搜索标题、内容、分类或链接">
+            <div class="form-row">
+              <input id="filterDate" type="date" aria-label="按日期筛选">
+              <select id="filterCategory" aria-label="按分类筛选">
+                <option value="">全部分类</option>
+              </select>
+            </div>
           </div>
           <div class="entries-list" id="entriesList"></div>
         </section>
@@ -90,16 +122,21 @@
 
   <template id="entryTemplate">
     <article class="entry-card">
-      <img class="entry-image" alt="">
       <div class="entry-body">
         <div class="entry-meta">
           <span class="entry-mood"></span>
+          <span class="entry-category"></span>
           <time class="entry-date"></time>
         </div>
         <h3 class="entry-title"></h3>
         <p class="entry-content"></p>
+        <div class="entry-images"></div>
+        <div class="entry-links"></div>
       </div>
-      <button class="delete-button" type="button" aria-label="删除日记">删除</button>
+      <div class="entry-actions">
+        <button class="ghost-button edit-button" type="button">编辑</button>
+        <button class="delete-button" type="button" aria-label="删除日记">删除</button>
+      </div>
     </article>
   </template>
 
