@@ -49,6 +49,16 @@ http://电脑的局域网 IP:8000
 4. Render 会读取 `render.yaml` 创建 Web Service 和持久磁盘。
 5. 部署完成后，打开 Render 分配的 `https://...onrender.com` 地址。
 
+也可以使用 Railway：
+
+1. 打开 https://railway.com 并使用 GitHub 登录。
+2. 选择 New Project > Deploy from GitHub repo。
+3. 选择 `DemoNotation/CodexTest-webpage` 仓库。
+4. Railway 会读取 `railway.json`，启动命令是 `python server.py`。
+5. 在服务里添加一个 Volume，挂载路径可以使用 Railway 默认路径；服务器会自动读取 `RAILWAY_VOLUME_MOUNT_PATH` 保存日记数据。
+6. 在 Networking / Public Networking 里生成公网域名。
+7. 打开 Railway 给你的 `https://...up.railway.app` 地址。
+
 部署要求：
 
 - 启动命令：`python server.py`

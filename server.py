@@ -7,7 +7,12 @@ from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = Path(os.environ.get("DIARY_DATA_DIR", ROOT / "data"))
+DATA_DIR = Path(
+    os.environ.get(
+        "DIARY_DATA_DIR",
+        os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ROOT / "data"),
+    )
+)
 VAULT_FILE = DATA_DIR / "diary-vault.json"
 MAX_BODY_BYTES = 30 * 1024 * 1024
 
