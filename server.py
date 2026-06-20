@@ -119,7 +119,7 @@ class DiaryHandler(SimpleHTTPRequestHandler):
                 vault["accessKeyHash"] = value.get("accessKeyHash")
                 return vault
         except HTTPError as error:
-            if error.code == 404:
+            if error.code in (400, 404):
                 return self._empty_vault()
             raise RuntimeError(f"Supabase read failed ({error.code})") from error
         except (URLError, json.JSONDecodeError) as error:
