@@ -641,10 +641,10 @@ h2 {
   background: #f8fafc;
 }
 
-.attachment-preview img,
-.attachment-preview video,
-.attachment-preview audio,
-.attachment-preview iframe {
+.attachment-preview > img,
+.attachment-preview > video,
+.attachment-preview > audio,
+.attachment-preview > iframe {
   display: block;
   width: 100%;
   border: 0;
@@ -652,13 +652,13 @@ h2 {
   background: #101828;
 }
 
-.attachment-preview img,
-.attachment-preview video {
+.attachment-preview > img,
+.attachment-preview > video {
   max-height: 70vh;
   object-fit: contain;
 }
 
-.attachment-preview iframe {
+.attachment-preview > iframe {
   height: min(68vh, 720px);
   background: #fff;
 }
@@ -668,6 +668,104 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.attachment-preview-commands {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.file-text-preview,
+.office-document-preview,
+.spreadsheet-preview,
+.powerpoint-preview {
+  max-height: 68vh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+}
+
+.file-text-preview {
+  margin: 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: normal;
+  white-space: pre-wrap;
+}
+
+.office-document-preview {
+  line-height: 1.75;
+}
+
+.office-document-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.office-document-preview table,
+.spreadsheet-preview table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.office-document-preview th,
+.office-document-preview td,
+.spreadsheet-preview th,
+.spreadsheet-preview td {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.spreadsheet-scroll {
+  margin-top: 10px;
+  overflow: auto;
+}
+
+.spreadsheet-preview th {
+  position: sticky;
+  top: 0;
+  background: #eef7f5;
+}
+
+.powerpoint-preview {
+  display: grid;
+  gap: 14px;
+  background: #eef2f6;
+}
+
+.powerpoint-preview section {
+  min-height: 180px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.powerpoint-preview h4 {
+  margin: 0 0 12px;
+  color: var(--accent);
+}
+
+.powerpoint-preview p {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.file-preview-notice {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  line-height: 1.7;
 }
 
 .entry-dialog-links {
@@ -748,5 +846,10 @@ h2 {
   .attachment-preview-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .attachment-preview-commands {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 }

@@ -610,7 +610,7 @@ async function showEntryDetails(id) {
     dialogAttachmentList.append(loading);
     try {
       const url = await getAttachmentUrl(attachment);
-      loading.replaceWith(createAttachmentPreview(attachment, url));
+      loading.replaceWith(await createAttachmentPreview(attachment, url));
     } catch {
       loading.querySelector(".attachment-file-meta").textContent = "附件暂时无法读取";
     }
@@ -846,33 +846,48 @@ function createAttachmentLoading(attachment) {
   return item;
 }
 
-function createAttachmentPreview(attachment, url) {
+async function createAttachmentPreview(attachment, url) {
   const preview = document.createElement("div");
   preview.className = "attachment-preview";
   const type = attachment.type || "application/octet-stream";
+  const extension = getFileExtension(attachment.name);
 
-  if (type.startsWith("image/")) {
-    const img = document.createElement("img");
-    img.src = url;
-    img.alt = attachment.name;
-    preview.append(img);
-  } else if (type.startsWith("video/")) {
-    const video = document.createElement("video");
-    video.src = url;
-    video.controls = true;
-    video.preload = "metadata";
-    preview.append(video);
-  } else if (type.startsWith("audio/")) {
-    const audio = document.createElement("audio");
-    audio.src = url;
-    audio.controls = true;
-    audio.preload = "metadata";
-    preview.append(audio);
-  } else if (type === "application/pdf") {
-    const frame = document.createElement("iframe");
-    frame.src = url;
-    frame.title = attachment.name;
-    preview.append(frame);
+  try {
+    if (type.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = attachment.name;
+      preview.append(img);
+    } else if (type.startsWith("video/")) {
+      const video = document.createElement("video");
+      video.src = url;
+      video.controls = true;
+      video.preload = "metadata";
+      preview.append(video);
+    } else if (type.startsWith("audio/")) {
+      const audio = document.createElement("audio");
+      audio.src = url;
+      audio.controls = true;
+      audio.preload = "metadata";
+      preview.append(audio);
+    } else if (type === "application/pdf" || extension === "pdf") {
+      const frame = document.createElement("iframe");
+      frame.src = url;
+      frame.title = attachment.name;
+      preview.append(frame);
+    } else if (extension === "docx") {
+      preview.append(await createWordPreview(url));
+    } else if (["xlsx", "xls", "csv"].includes(extension)) {
+      preview.append(await createSpreadsheetPreview(url));
+    } else if (extension === "pptx") {
+      preview.append(await createPowerPointPreview(url));
+    } else if (isTextFile(type, extension)) {
+      preview.append(await createTextPreview(url));
+    } else {
+      preview.append(createUnsupportedPreview(attachment));
+    }
+  } catch {
+    preview.append(createPreviewMessage("文件内容预览失败，可以尝试在新窗口打开或下载。"));
   }
 
   const actions = document.createElement("div");
@@ -893,9 +908,157 @@ function createAttachmentPreview(attachment, url) {
   download.target = "_blank";
   download.rel = "noopener noreferrer";
   download.textContent = "下载";
-  actions.append(info, download);
+
+  const open = document.createElement("a");
+  open.className = "attachment-download-button";
+  open.href = url;
+  open.target = "_blank";
+  open.rel = "noopener noreferrer";
+  open.textContent = "打开";
+
+  const commands = document.createElement("div");
+  commands.className = "attachment-preview-commands";
+  commands.append(open, download);
+  actions.append(info, commands);
   preview.append(actions);
   return preview;
+}
+
+async function fetchAttachmentBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("附件读取失败");
+  }
+  return response.arrayBuffer();
+}
+
+async function createTextPreview(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("文本读取失败");
+  }
+  const text = await response.text();
+  const pre = document.createElement("pre");
+  pre.className = "file-text-preview";
+  pre.textContent = text.slice(0, 500000);
+  if (text.length > 500000) {
+    pre.textContent += "\n\n[内容较长，预览仅显示前 500,000 个字符]";
+  }
+  return pre;
+}
+
+async function createWordPreview(url) {
+  if (!globalThis.mammoth) {
+    throw new Error("Word 解析器未加载");
+  }
+  const result = await globalThis.mammoth.convertToHtml({ arrayBuffer: await fetchAttachmentBuffer(url) });
+  const parsed = new DOMParser().parseFromString(result.value, "text/html");
+  parsed.querySelectorAll("script, style, iframe, object, embed, link, meta").forEach((node) => node.remove());
+  parsed.body.querySelectorAll("*").forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim().toLowerCase();
+      if (name.startsWith("on") || name === "style") {
+        element.removeAttribute(attribute.name);
+      }
+      if (name === "href" && !/^(https?:|mailto:|#)/.test(value)) {
+        element.removeAttribute(attribute.name);
+      }
+      if (name === "src" && !value.startsWith("data:image/")) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+
+  const container = document.createElement("div");
+  container.className = "office-document-preview";
+  [...parsed.body.childNodes].forEach((node) => container.append(document.importNode(node, true)));
+  return container;
+}
+
+async function createSpreadsheetPreview(url) {
+  if (!globalThis.XLSX) {
+    throw new Error("表格解析器未加载");
+  }
+  const workbook = globalThis.XLSX.read(await fetchAttachmentBuffer(url), { type: "array" });
+  const sheetName = workbook.SheetNames[0];
+  const rows = globalThis.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    header: 1,
+    raw: false,
+    defval: ""
+  }).slice(0, 200);
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "spreadsheet-preview";
+  const label = document.createElement("p");
+  label.className = "attachment-file-meta";
+  label.textContent = `工作表：${sheetName}${rows.length === 200 ? "（仅显示前 200 行）" : ""}`;
+  const scroller = document.createElement("div");
+  scroller.className = "spreadsheet-scroll";
+  const table = document.createElement("table");
+  rows.forEach((row, rowIndex) => {
+    const tr = document.createElement("tr");
+    row.slice(0, 40).forEach((cell) => {
+      const element = document.createElement(rowIndex === 0 ? "th" : "td");
+      element.textContent = String(cell);
+      tr.append(element);
+    });
+    table.append(tr);
+  });
+  scroller.append(table);
+  wrapper.append(label, scroller);
+  return wrapper;
+}
+
+async function createPowerPointPreview(url) {
+  if (!globalThis.JSZip) {
+    throw new Error("PowerPoint 解析器未加载");
+  }
+  const zip = await globalThis.JSZip.loadAsync(await fetchAttachmentBuffer(url));
+  const slideNames = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))
+    .slice(0, 100);
+  const container = document.createElement("div");
+  container.className = "powerpoint-preview";
+
+  for (let index = 0; index < slideNames.length; index += 1) {
+    const xml = await zip.file(slideNames[index]).async("text");
+    const documentXml = new DOMParser().parseFromString(xml, "application/xml");
+    const texts = [...documentXml.getElementsByTagName("a:t")].map((node) => node.textContent).filter(Boolean);
+    const slide = document.createElement("section");
+    const title = document.createElement("h4");
+    title.textContent = `第 ${index + 1} 页`;
+    const content = document.createElement("p");
+    content.textContent = texts.join("\n") || "此页没有可提取的文字内容";
+    slide.append(title, content);
+    container.append(slide);
+  }
+  return container;
+}
+
+function createUnsupportedPreview(attachment) {
+  return createPreviewMessage(`暂不支持在线解析 ${getFileExtension(attachment.name).toUpperCase() || "此类型"} 文件。你仍可尝试“打开”或下载后查看。`);
+}
+
+function createPreviewMessage(message) {
+  const notice = document.createElement("div");
+  notice.className = "file-preview-notice";
+  notice.textContent = message;
+  return notice;
+}
+
+function isTextFile(type, extension) {
+  return type.startsWith("text/") || [
+    "txt", "md", "json", "xml", "html", "htm", "css", "js", "ts", "jsx", "tsx",
+    "py", "java", "c", "h", "cpp", "cs", "go", "rs", "php", "rb", "sql", "log",
+    "yaml", "yml", "ini", "conf", "ps1", "sh", "bat"
+  ].includes(extension);
+}
+
+function getFileExtension(name) {
+  const value = String(name || "");
+  return value.includes(".") ? value.split(".").pop().toLowerCase() : "";
 }
 
 function createAttachmentIcon(attachment) {
@@ -909,10 +1072,15 @@ function createAttachmentIcon(attachment) {
 
 function fileTypeLabel(attachment) {
   const type = attachment.type || "";
+  const extension = getFileExtension(attachment.name);
   if (type.startsWith("image/")) return "图片";
   if (type.startsWith("video/")) return "视频";
   if (type.startsWith("audio/")) return "音频";
-  if (type === "application/pdf") return "PDF";
+  if (type === "application/pdf" || extension === "pdf") return "PDF";
+  if (["doc", "docx"].includes(extension)) return "Word 文档";
+  if (["xls", "xlsx", "csv"].includes(extension)) return "表格";
+  if (["ppt", "pptx"].includes(extension)) return "PowerPoint";
+  if (isTextFile(type, extension)) return "文本文件";
   return "文件";
 }
 
