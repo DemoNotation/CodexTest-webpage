@@ -38,6 +38,13 @@ const entriesList = document.querySelector("#entriesList");
 const entryCount = document.querySelector("#entryCount");
 const clearEntries = document.querySelector("#clearEntries");
 const template = document.querySelector("#entryTemplate");
+const entryDialog = document.querySelector("#entryDialog");
+const closeEntryDialog = document.querySelector("#closeEntryDialog");
+const dialogEntryMeta = document.querySelector("#dialogEntryMeta");
+const dialogEntryTitle = document.querySelector("#dialogEntryTitle");
+const dialogEntryContent = document.querySelector("#dialogEntryContent");
+const dialogEntryImages = document.querySelector("#dialogEntryImages");
+const dialogEntryLinks = document.querySelector("#dialogEntryLinks");
 
 let cryptoKey = null;
 let accessKey = null;
@@ -197,8 +204,14 @@ clearEntries.addEventListener("click", async () => {
 });
 
 entriesList.addEventListener("click", async (event) => {
+  const viewButton = event.target.closest(".view-button");
   const editButton = event.target.closest(".edit-button");
   const deleteButton = event.target.closest(".delete-button");
+
+  if (viewButton) {
+    showEntryDetails(viewButton.dataset.id);
+    return;
+  }
 
   if (editButton) {
     startEditEntry(editButton.dataset.id);
@@ -213,6 +226,14 @@ entriesList.addEventListener("click", async (event) => {
   await saveEntries();
   updateSaveStatus("已删除并同步到服务器。");
   renderEntries();
+});
+
+closeEntryDialog.addEventListener("click", () => entryDialog.close());
+
+entryDialog.addEventListener("click", (event) => {
+  if (event.target === entryDialog) {
+    entryDialog.close();
+  }
 });
 
 [searchInput, filterDate, filterCategory].forEach((control) => {
@@ -459,6 +480,46 @@ function startEditEntry(id) {
   entryTitle.focus();
 }
 
+function showEntryDetails(id) {
+  const entry = entries.find((item) => item.id === id);
+
+  if (!entry) {
+    return;
+  }
+
+  dialogEntryMeta.textContent = "";
+  [entry.mood, entry.category || "未分类", formatDate(entry.date)].forEach((value) => {
+    const item = document.createElement("span");
+    item.textContent = value;
+    dialogEntryMeta.append(item);
+  });
+
+  dialogEntryTitle.textContent = entry.title;
+  dialogEntryContent.textContent = entry.content;
+  dialogEntryImages.textContent = "";
+  dialogEntryLinks.textContent = "";
+
+  entry.images.forEach((image, index) => {
+    const img = document.createElement("img");
+    img.src = image.data;
+    img.alt = `${entry.title} 图片 ${index + 1}`;
+    dialogEntryImages.append(img);
+  });
+
+  entry.links.forEach((link) => {
+    const anchor = document.createElement("a");
+    anchor.href = link.url || "#";
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.textContent = link.title || link.url;
+    dialogEntryLinks.append(anchor);
+  });
+
+  dialogEntryImages.hidden = entry.images.length === 0;
+  dialogEntryLinks.hidden = entry.links.length === 0;
+  entryDialog.showModal();
+}
+
 function resetForm() {
   editingEntryId = null;
   selectedImages = [];
@@ -678,6 +739,7 @@ function renderEntries() {
     const content = node.querySelector(".entry-content");
     const images = node.querySelector(".entry-images");
     const links = node.querySelector(".entry-links");
+    const viewButton = node.querySelector(".view-button");
     const editButton = node.querySelector(".edit-button");
     const deleteButton = node.querySelector(".delete-button");
 
@@ -687,6 +749,7 @@ function renderEntries() {
     date.textContent = formatDate(entry.date);
     title.textContent = entry.title;
     content.textContent = entry.content;
+    viewButton.dataset.id = entry.id;
     editButton.dataset.id = entry.id;
     deleteButton.dataset.id = entry.id;
 

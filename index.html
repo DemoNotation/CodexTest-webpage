@@ -120,6 +120,21 @@
     </section>
   </main>
 
+  <dialog class="entry-dialog" id="entryDialog" aria-labelledby="dialogEntryTitle">
+    <article class="entry-dialog-panel">
+      <header class="entry-dialog-header">
+        <div>
+          <div class="entry-meta" id="dialogEntryMeta"></div>
+          <h2 id="dialogEntryTitle"></h2>
+        </div>
+        <button class="dialog-close-button" id="closeEntryDialog" type="button" aria-label="关闭日记详情">×</button>
+      </header>
+      <p class="entry-dialog-content" id="dialogEntryContent"></p>
+      <div class="entry-dialog-images" id="dialogEntryImages"></div>
+      <div class="entry-dialog-links" id="dialogEntryLinks"></div>
+    </article>
+  </dialog>
+
   <template id="entryTemplate">
     <article class="entry-card">
       <div class="entry-body">
@@ -134,6 +149,7 @@
         <div class="entry-links"></div>
       </div>
       <div class="entry-actions">
+        <button class="primary-button view-button" type="button">查看</button>
         <button class="ghost-button edit-button" type="button">编辑</button>
         <button class="delete-button" type="button" aria-label="删除日记">删除</button>
       </div>
