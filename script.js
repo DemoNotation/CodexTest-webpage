@@ -22,8 +22,9 @@ const entryMood = document.querySelector("#entryMood");
 const entryCategory = document.querySelector("#entryCategory");
 const categoryOptions = document.querySelector("#categoryOptions");
 const entryContent = document.querySelector("#entryContent");
-const entryImage = document.querySelector("#entryImage");
+const entryAttachment = document.querySelector("#entryAttachment");
 const imagePreview = document.querySelector("#imagePreview");
+const attachmentEditorList = document.querySelector("#attachmentEditorList");
 const linkTitle = document.querySelector("#linkTitle");
 const linkUrl = document.querySelector("#linkUrl");
 const addLinkButton = document.querySelector("#addLinkButton");
@@ -44,14 +45,22 @@ const dialogEntryMeta = document.querySelector("#dialogEntryMeta");
 const dialogEntryTitle = document.querySelector("#dialogEntryTitle");
 const dialogEntryContent = document.querySelector("#dialogEntryContent");
 const dialogEntryImages = document.querySelector("#dialogEntryImages");
+const dialogEntryAttachments = document.querySelector("#dialogEntryAttachments");
+const dialogAttachmentList = document.querySelector("#dialogAttachmentList");
 const dialogEntryLinks = document.querySelector("#dialogEntryLinks");
 
 let cryptoKey = null;
 let accessKey = null;
 let entries = [];
 let selectedImages = [];
+let selectedAttachments = [];
 let attachedLinks = [];
 let editingEntryId = null;
+let formEntryId = createId();
+let uploadInProgress = false;
+let newlyUploadedAttachmentIds = new Set();
+let originalAttachmentIds = new Set();
+let pendingAttachmentDeletes = [];
 let currentVault = { auth: null, entries: null, updatedAt: null };
 let refreshTimer = null;
 let isRefreshing = false;
@@ -111,19 +120,43 @@ loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-logoutButton.addEventListener("click", lockDiary);
+logoutButton.addEventListener("click", async () => {
+  await cleanupNewAttachments();
+  lockDiary();
+});
 
-entryImage.addEventListener("change", async () => {
-  const files = Array.from(entryImage.files || []);
+entryAttachment.addEventListener("change", async () => {
+  const files = Array.from(entryAttachment.files || []);
 
   if (files.length === 0) {
     return;
   }
 
-  const images = await Promise.all(files.map(readImageFile));
-  selectedImages = [...selectedImages, ...images];
-  entryImage.value = "";
-  renderImagePreview();
+  entryAttachment.value = "";
+  if (selectedImages.length + selectedAttachments.length + files.length > 20) {
+    updateSaveStatus("每篇日记最多添加 20 个附件。");
+    return;
+  }
+
+  uploadInProgress = true;
+  saveEntryButton.disabled = true;
+
+  for (const file of files) {
+    if (file.size > 50 * 1024 * 1024) {
+      updateSaveStatus(`${file.name} 超过 50 MB，无法上传。`);
+      continue;
+    }
+
+    try {
+      await uploadAttachment(file);
+    } catch (error) {
+      updateSaveStatus(error.message || `${file.name} 上传失败。`);
+    }
+  }
+
+  uploadInProgress = false;
+  saveEntryButton.disabled = false;
+  renderAttachmentEditor();
 });
 
 addLinkButton.addEventListener("click", addAttachedLink);
@@ -150,25 +183,52 @@ imagePreview.addEventListener("click", (event) => {
   renderImagePreview();
 });
 
-cancelEditButton.addEventListener("click", resetForm);
+attachmentEditorList.addEventListener("click", async (event) => {
+  const button = event.target.closest(".attachment-remove-button");
+  if (!button) {
+    return;
+  }
+
+  const attachment = selectedAttachments.find((item) => item.id === button.dataset.id);
+  if (!attachment) {
+    return;
+  }
+
+  selectedAttachments = selectedAttachments.filter((item) => item.id !== attachment.id);
+  if (originalAttachmentIds.has(attachment.id)) {
+    pendingAttachmentDeletes.push(attachment);
+  } else {
+    await deleteAttachment(attachment).catch(() => {});
+    newlyUploadedAttachmentIds.delete(attachment.id);
+  }
+  renderAttachmentEditor();
+});
+
+cancelEditButton.addEventListener("click", discardFormChanges);
 
 diaryForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (uploadInProgress) {
+    updateSaveStatus("请等待附件上传完成后再保存。");
+    return;
+  }
 
   const savedAt = new Date().toISOString();
   const entry = {
-    id: editingEntryId || globalThis.crypto?.randomUUID?.() || String(Date.now()),
+    id: formEntryId,
     title: entryTitle.value.trim(),
     date: entryDate.value,
     mood: entryMood.value,
     category: entryCategory.value.trim(),
     content: entryContent.value.trim(),
     images: selectedImages,
+    attachments: selectedAttachments.map(({ status, progress, ...attachment }) => attachment),
     links: attachedLinks.map(({ id, ...link }) => link),
     createdAt: savedAt,
     updatedAt: savedAt
   };
 
+  const previousEntries = entries;
   if (editingEntryId) {
     entries = entries.map((item) => {
       if (item.id !== editingEntryId) {
@@ -184,11 +244,22 @@ diaryForm.addEventListener("submit", async (event) => {
     entries = [entry, ...entries];
   }
 
-  sortEntries();
-  await saveEntries();
-  updateSaveStatus(editingEntryId ? "已更新并同步到服务器。" : "已保存到服务器。其他设备会自动读取最新内容。");
-  resetForm();
-  renderEntries();
+  try {
+    saveEntryButton.disabled = true;
+    sortEntries();
+    await saveEntries();
+    await Promise.allSettled(pendingAttachmentDeletes.map(deleteAttachment));
+    newlyUploadedAttachmentIds.clear();
+    pendingAttachmentDeletes = [];
+    updateSaveStatus(editingEntryId ? "已更新并同步到服务器。" : "已保存到服务器。其他设备会自动读取最新内容。");
+    resetForm();
+    renderEntries();
+  } catch (error) {
+    entries = previousEntries;
+    updateSaveStatus(error.message || "日记保存失败，请稍后重试。");
+  } finally {
+    saveEntryButton.disabled = false;
+  }
 });
 
 clearEntries.addEventListener("click", async () => {
@@ -196,8 +267,13 @@ clearEntries.addEventListener("click", async () => {
     return;
   }
 
+  const attachments = [
+    ...entries.flatMap((entry) => entry.attachments),
+    ...selectedAttachments.filter((attachment) => newlyUploadedAttachmentIds.has(attachment.id))
+  ];
   entries = [];
   await saveEntries();
+  await Promise.allSettled(attachments.map(deleteAttachment));
   updateSaveStatus("已清空并同步到服务器。");
   resetForm();
   renderEntries();
@@ -222,8 +298,10 @@ entriesList.addEventListener("click", async (event) => {
     return;
   }
 
+  const deletedEntry = entries.find((entry) => entry.id === deleteButton.dataset.id);
   entries = entries.filter((entry) => entry.id !== deleteButton.dataset.id);
   await saveEntries();
+  await Promise.allSettled((deletedEntry?.attachments || []).map(deleteAttachment));
   updateSaveStatus("已删除并同步到服务器。");
   renderEntries();
 });
@@ -392,6 +470,9 @@ function normalizeEntries(value) {
     images: Array.isArray(entry.images)
       ? entry.images
       : entry.image ? [{ id: `${entry.id || Date.now()}-image`, data: entry.image }] : [],
+    attachments: Array.isArray(entry.attachments)
+      ? entry.attachments.filter((attachment) => attachment?.id && attachment?.path)
+      : [],
     links: Array.isArray(entry.links) ? entry.links : [],
     createdAt: entry.createdAt || new Date().toISOString(),
     updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString()
@@ -463,12 +544,17 @@ function startEditEntry(id) {
   }
 
   editingEntryId = entry.id;
+  formEntryId = entry.id;
   entryTitle.value = entry.title;
   entryDate.value = entry.date;
   entryMood.value = entry.mood;
   entryCategory.value = entry.category || "";
   entryContent.value = entry.content;
   selectedImages = [...entry.images];
+  selectedAttachments = entry.attachments.map((attachment) => ({ ...attachment, status: "ready", progress: 100 }));
+  originalAttachmentIds = new Set(entry.attachments.map((attachment) => attachment.id));
+  newlyUploadedAttachmentIds = new Set();
+  pendingAttachmentDeletes = [];
   attachedLinks = entry.links.map((link) => ({
     id: globalThis.crypto?.randomUUID?.() || `${entry.id}-${link.url}`,
     ...link
@@ -476,11 +562,12 @@ function startEditEntry(id) {
   saveEntryButton.textContent = "更新日记";
   cancelEditButton.hidden = false;
   renderImagePreview();
+  renderAttachmentEditor();
   renderAttachedLinks();
   entryTitle.focus();
 }
 
-function showEntryDetails(id) {
+async function showEntryDetails(id) {
   const entry = entries.find((item) => item.id === id);
 
   if (!entry) {
@@ -497,13 +584,11 @@ function showEntryDetails(id) {
   dialogEntryTitle.textContent = entry.title;
   dialogEntryContent.textContent = entry.content;
   dialogEntryImages.textContent = "";
+  dialogAttachmentList.textContent = "";
   dialogEntryLinks.textContent = "";
 
   entry.images.forEach((image, index) => {
-    const img = document.createElement("img");
-    img.src = image.data;
-    img.alt = `${entry.title} 图片 ${index + 1}`;
-    dialogEntryImages.append(img);
+    dialogEntryImages.append(createLegacyImagePreview(entry, image, index));
   });
 
   entry.links.forEach((link) => {
@@ -516,20 +601,48 @@ function showEntryDetails(id) {
   });
 
   dialogEntryImages.hidden = entry.images.length === 0;
+  dialogEntryAttachments.hidden = entry.attachments.length === 0;
   dialogEntryLinks.hidden = entry.links.length === 0;
   entryDialog.showModal();
+
+  for (const attachment of entry.attachments) {
+    const loading = createAttachmentLoading(attachment);
+    dialogAttachmentList.append(loading);
+    try {
+      const url = await getAttachmentUrl(attachment);
+      loading.replaceWith(createAttachmentPreview(attachment, url));
+    } catch {
+      loading.querySelector(".attachment-file-meta").textContent = "附件暂时无法读取";
+    }
+  }
 }
 
 function resetForm() {
   editingEntryId = null;
+  formEntryId = createId();
   selectedImages = [];
+  selectedAttachments = [];
   attachedLinks = [];
+  newlyUploadedAttachmentIds = new Set();
+  originalAttachmentIds = new Set();
+  pendingAttachmentDeletes = [];
   diaryForm.reset();
   entryDate.valueAsDate = new Date();
   saveEntryButton.textContent = "保存日记";
   cancelEditButton.hidden = true;
   renderImagePreview();
+  renderAttachmentEditor();
   renderAttachedLinks();
+}
+
+async function discardFormChanges() {
+  await cleanupNewAttachments();
+  resetForm();
+}
+
+async function cleanupNewAttachments() {
+  const newAttachments = selectedAttachments.filter((attachment) => newlyUploadedAttachmentIds.has(attachment.id));
+  await Promise.allSettled(newAttachments.map(deleteAttachment));
 }
 
 function renderImagePreview() {
@@ -553,6 +666,264 @@ function renderImagePreview() {
     item.append(img, button);
     imagePreview.append(item);
   });
+}
+
+function renderAttachmentEditor() {
+  attachmentEditorList.textContent = "";
+
+  selectedAttachments.forEach((attachment) => {
+    const item = document.createElement("div");
+    item.className = "attachment-editor-item";
+
+    const icon = createAttachmentIcon(attachment);
+    const info = document.createElement("div");
+    info.className = "attachment-file-info";
+
+    const name = document.createElement("span");
+    name.className = "attachment-file-name";
+    name.textContent = attachment.name;
+
+    const meta = document.createElement("p");
+    meta.className = "attachment-progress-text";
+    meta.textContent = attachment.status === "uploading"
+      ? `正在上传 ${attachment.progress || 0}%`
+      : formatFileSize(attachment.size);
+
+    info.append(name, meta);
+
+    if (attachment.status === "uploading") {
+      const progress = document.createElement("div");
+      progress.className = "attachment-progress";
+      const bar = document.createElement("div");
+      bar.className = "attachment-progress-bar";
+      bar.style.width = `${attachment.progress || 0}%`;
+      progress.append(bar);
+      info.append(progress);
+    }
+
+    const remove = document.createElement("button");
+    remove.className = "attachment-remove-button";
+    remove.type = "button";
+    remove.dataset.id = attachment.id;
+    remove.textContent = "移除";
+    remove.disabled = attachment.status === "uploading";
+
+    item.append(icon, info, remove);
+    attachmentEditorList.append(item);
+  });
+}
+
+function uploadAttachment(file) {
+  const attachment = {
+    id: createId(),
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    size: file.size,
+    path: "",
+    createdAt: new Date().toISOString(),
+    status: "uploading",
+    progress: 0
+  };
+  selectedAttachments.push(attachment);
+  renderAttachmentEditor();
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/attachments/${encodeURIComponent(formEntryId)}/${encodeURIComponent(attachment.id)}`);
+    request.setRequestHeader("Content-Type", attachment.type);
+    request.setRequestHeader("X-Diary-Key", accessKey);
+
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        attachment.progress = Math.round((event.loaded / event.total) * 100);
+        renderAttachmentEditor();
+      }
+    });
+
+    request.addEventListener("load", () => {
+      if (request.status < 200 || request.status >= 300) {
+        selectedAttachments = selectedAttachments.filter((item) => item.id !== attachment.id);
+        renderAttachmentEditor();
+        reject(new Error(`${file.name} 上传失败。`));
+        return;
+      }
+
+      const response = JSON.parse(request.responseText);
+      attachment.path = response.path;
+      attachment.status = "ready";
+      attachment.progress = 100;
+      newlyUploadedAttachmentIds.add(attachment.id);
+      renderAttachmentEditor();
+      resolve(attachment);
+    });
+
+    request.addEventListener("error", () => {
+      selectedAttachments = selectedAttachments.filter((item) => item.id !== attachment.id);
+      renderAttachmentEditor();
+      reject(new Error(`${file.name} 上传失败，请检查网络。`));
+    });
+
+    request.send(file);
+  });
+}
+
+async function deleteAttachment(attachment) {
+  const endpoint = attachmentEndpoint(attachment);
+  if (!endpoint) {
+    return;
+  }
+
+  const response = await fetch(endpoint, {
+    method: "DELETE",
+    headers: { "X-Diary-Key": accessKey }
+  });
+  if (!response.ok) {
+    throw new Error("附件删除失败");
+  }
+}
+
+async function getAttachmentUrl(attachment) {
+  const endpoint = attachmentEndpoint(attachment);
+  if (!endpoint) {
+    throw new Error("附件地址无效");
+  }
+
+  const response = await fetch(`${endpoint}/url`, {
+    method: "POST",
+    headers: { "X-Diary-Key": accessKey }
+  });
+  if (!response.ok) {
+    throw new Error("附件读取失败");
+  }
+  return (await response.json()).url;
+}
+
+function attachmentEndpoint(attachment) {
+  const parts = String(attachment.path || "").split("/");
+  if (parts.length !== 3 || parts[0] !== "attachments") {
+    return "";
+  }
+  return `/api/attachments/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`;
+}
+
+function createLegacyImagePreview(entry, image, index) {
+  const preview = document.createElement("div");
+  preview.className = "attachment-preview";
+
+  const img = document.createElement("img");
+  img.src = image.data;
+  img.alt = `${entry.title} 图片 ${index + 1}`;
+
+  const actions = document.createElement("div");
+  actions.className = "attachment-preview-actions";
+  const name = document.createElement("span");
+  name.className = "attachment-file-name";
+  name.textContent = image.name || `日记图片 ${index + 1}.jpg`;
+  const download = document.createElement("a");
+  download.className = "attachment-download-button";
+  download.href = image.data;
+  download.download = image.name || `日记图片-${index + 1}.jpg`;
+  download.textContent = "下载";
+  actions.append(name, download);
+  preview.append(img, actions);
+  return preview;
+}
+
+function createAttachmentLoading(attachment) {
+  const item = document.createElement("div");
+  item.className = "attachment-file-row";
+  const icon = createAttachmentIcon(attachment);
+  const info = document.createElement("div");
+  info.className = "attachment-file-info";
+  const name = document.createElement("span");
+  name.className = "attachment-file-name";
+  name.textContent = attachment.name;
+  const meta = document.createElement("p");
+  meta.className = "attachment-file-meta";
+  meta.textContent = "正在加载附件...";
+  info.append(name, meta);
+  item.append(icon, info);
+  return item;
+}
+
+function createAttachmentPreview(attachment, url) {
+  const preview = document.createElement("div");
+  preview.className = "attachment-preview";
+  const type = attachment.type || "application/octet-stream";
+
+  if (type.startsWith("image/")) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = attachment.name;
+    preview.append(img);
+  } else if (type.startsWith("video/")) {
+    const video = document.createElement("video");
+    video.src = url;
+    video.controls = true;
+    video.preload = "metadata";
+    preview.append(video);
+  } else if (type.startsWith("audio/")) {
+    const audio = document.createElement("audio");
+    audio.src = url;
+    audio.controls = true;
+    audio.preload = "metadata";
+    preview.append(audio);
+  } else if (type === "application/pdf") {
+    const frame = document.createElement("iframe");
+    frame.src = url;
+    frame.title = attachment.name;
+    preview.append(frame);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "attachment-preview-actions";
+  const info = document.createElement("div");
+  info.className = "attachment-file-info";
+  const name = document.createElement("span");
+  name.className = "attachment-file-name";
+  name.textContent = attachment.name;
+  const meta = document.createElement("p");
+  meta.className = "attachment-file-meta";
+  meta.textContent = `${fileTypeLabel(attachment)} · ${formatFileSize(attachment.size)}`;
+  info.append(name, meta);
+
+  const download = document.createElement("a");
+  download.className = "attachment-download-button";
+  download.href = `${url}${url.includes("?") ? "&" : "?"}download=${encodeURIComponent(attachment.name)}`;
+  download.target = "_blank";
+  download.rel = "noopener noreferrer";
+  download.textContent = "下载";
+  actions.append(info, download);
+  preview.append(actions);
+  return preview;
+}
+
+function createAttachmentIcon(attachment) {
+  const icon = document.createElement("span");
+  icon.className = "attachment-type-icon";
+  const name = attachment.name || "";
+  const extension = name.includes(".") ? name.split(".").pop().slice(0, 4) : "file";
+  icon.textContent = extension || "file";
+  return icon;
+}
+
+function fileTypeLabel(attachment) {
+  const type = attachment.type || "";
+  if (type.startsWith("image/")) return "图片";
+  if (type.startsWith("video/")) return "视频";
+  if (type.startsWith("audio/")) return "音频";
+  if (type === "application/pdf") return "PDF";
+  return "文件";
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createId() {
+  return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function renderAttachedLinks() {
@@ -625,6 +996,7 @@ function getFilteredEntries() {
       entry.content,
       entry.category,
       entry.mood,
+      ...entry.attachments.map((attachment) => attachment.name),
       ...entry.links.map((link) => `${link.title} ${link.url}`)
     ].join(" ").toLowerCase();
 
@@ -708,6 +1080,7 @@ function lockDiary() {
   accessKey = null;
   entries = [];
   selectedImages = [];
+  selectedAttachments = [];
   attachedLinks = [];
   saveStatus.textContent = "";
   diaryView.hidden = true;
@@ -738,6 +1111,7 @@ function renderEntries() {
     const title = node.querySelector(".entry-title");
     const content = node.querySelector(".entry-content");
     const images = node.querySelector(".entry-images");
+    const attachmentSummary = node.querySelector(".entry-attachment-summary");
     const links = node.querySelector(".entry-links");
     const viewButton = node.querySelector(".view-button");
     const editButton = node.querySelector(".edit-button");
@@ -762,6 +1136,11 @@ function renderEntries() {
 
     if (entry.images.length === 0) {
       images.hidden = true;
+    }
+
+    if (entry.attachments.length > 0) {
+      attachmentSummary.hidden = false;
+      attachmentSummary.textContent = `${entry.attachments.length} 个附件`;
     }
 
     entry.links.forEach((link) => {

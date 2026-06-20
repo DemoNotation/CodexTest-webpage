@@ -251,6 +251,86 @@ textarea:focus {
   background: #eef2f6;
 }
 
+.attachment-editor-list,
+.attachment-view-list {
+  display: grid;
+  gap: 10px;
+}
+
+.attachment-editor-item,
+.attachment-file-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.attachment-type-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.attachment-file-info {
+  min-width: 0;
+}
+
+.attachment-file-name {
+  display: block;
+  color: #344054;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.attachment-file-meta,
+.attachment-progress-text {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.attachment-progress {
+  width: 100%;
+  height: 5px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7edf2;
+}
+
+.attachment-progress-bar {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.attachment-remove-button,
+.attachment-download-button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  font-weight: 800;
+}
+
+.attachment-remove-button {
+  color: var(--danger);
+}
+
 .remove-image-button {
   position: absolute;
   right: 6px;
@@ -449,6 +529,13 @@ h2 {
   margin-top: 12px;
 }
 
+.entry-attachment-summary {
+  margin-top: 12px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .entry-links a {
   color: var(--accent);
   overflow-wrap: anywhere;
@@ -536,6 +623,53 @@ h2 {
   object-fit: contain;
 }
 
+.entry-dialog-attachments {
+  margin-top: 24px;
+}
+
+.entry-dialog-attachments h3 {
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.attachment-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.attachment-preview img,
+.attachment-preview video,
+.attachment-preview audio,
+.attachment-preview iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: #101828;
+}
+
+.attachment-preview img,
+.attachment-preview video {
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.attachment-preview iframe {
+  height: min(68vh, 720px);
+  background: #fff;
+}
+
+.attachment-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .entry-dialog-links {
   display: grid;
   gap: 10px;
@@ -609,5 +743,10 @@ h2 {
     border: 0;
     border-radius: 0;
     padding: 20px 16px 36px;
+  }
+
+  .attachment-preview-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

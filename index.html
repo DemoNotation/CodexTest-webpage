@@ -72,11 +72,12 @@
           </div>
 
           <div class="field">
-            <label for="entryImage">图片</label>
-            <input id="entryImage" type="file" accept="image/*" multiple>
+            <label for="entryAttachment">附件</label>
+            <input id="entryAttachment" type="file" multiple>
           </div>
 
           <div class="image-preview-grid" id="imagePreview" hidden></div>
+          <div class="attachment-editor-list" id="attachmentEditorList"></div>
 
           <section class="link-editor" aria-label="链接附件">
             <div class="form-row">
@@ -131,6 +132,10 @@
       </header>
       <p class="entry-dialog-content" id="dialogEntryContent"></p>
       <div class="entry-dialog-images" id="dialogEntryImages"></div>
+      <section class="entry-dialog-attachments" id="dialogEntryAttachments" hidden>
+        <h3>附件</h3>
+        <div class="attachment-view-list" id="dialogAttachmentList"></div>
+      </section>
       <div class="entry-dialog-links" id="dialogEntryLinks"></div>
     </article>
   </dialog>
@@ -146,6 +151,7 @@
         <h3 class="entry-title"></h3>
         <p class="entry-content"></p>
         <div class="entry-images"></div>
+        <p class="entry-attachment-summary" hidden></p>
         <div class="entry-links"></div>
       </div>
       <div class="entry-actions">

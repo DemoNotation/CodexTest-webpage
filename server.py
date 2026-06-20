@@ -2,11 +2,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import argparse
 import hashlib
 import hmac
+import http.client
 import json
 import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -19,6 +20,7 @@ DATA_DIR = Path(
 )
 VAULT_FILE = DATA_DIR / "diary-vault.json"
 MAX_BODY_BYTES = 30 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "private-diary")
@@ -72,8 +74,54 @@ class DiaryHandler(SimpleHTTPRequestHandler):
         except RuntimeError as error:
             self.send_error(502, str(error))
 
+    def do_POST(self):
+        parts = self._attachment_parts()
+        if not parts:
+            self.send_error(404)
+            return
+
+        try:
+            stored = self._read_vault()
+            self._authorize_write(stored)
+            entry_id, attachment_id, action = parts
+            object_path = self._attachment_object_path(entry_id, attachment_id)
+
+            if action == "url":
+                self._send_json({"url": self._create_attachment_url(object_path)})
+                return
+
+            if action:
+                self.send_error(404)
+                return
+
+            self._upload_attachment(object_path)
+            self._send_json({"path": object_path})
+        except ValueError as error:
+            self.send_error(400, str(error))
+        except VaultAccessError as error:
+            self.send_error(403, str(error))
+        except RuntimeError as error:
+            self.send_error(502, str(error))
+
+    def do_DELETE(self):
+        parts = self._attachment_parts()
+        if not parts or parts[2]:
+            self.send_error(404)
+            return
+
+        try:
+            stored = self._read_vault()
+            self._authorize_write(stored)
+            object_path = self._attachment_object_path(parts[0], parts[1])
+            self._delete_attachment(object_path)
+            self._send_json({"deleted": True})
+        except VaultAccessError as error:
+            self.send_error(403, str(error))
+        except RuntimeError as error:
+            self.send_error(502, str(error))
+
     def do_OPTIONS(self):
-        if self._is_diary_api():
+        if self._is_diary_api() or self._attachment_parts():
             self.send_response(204)
             self._send_common_headers("application/json")
             self.end_headers()
@@ -83,6 +131,21 @@ class DiaryHandler(SimpleHTTPRequestHandler):
 
     def _is_diary_api(self):
         return urlparse(self.path).path == "/api/diary"
+
+    def _attachment_parts(self):
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) not in (4, 5) or parts[:2] != ["api", "attachments"]:
+            return None
+
+        entry_id, attachment_id = parts[2], parts[3]
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+        if not entry_id or not attachment_id or not set(entry_id + attachment_id) <= allowed:
+            return None
+
+        return entry_id, attachment_id, parts[4] if len(parts) == 5 else ""
+
+    def _attachment_object_path(self, entry_id, attachment_id):
+        return f"attachments/{entry_id}/{attachment_id}"
 
     def _read_vault(self):
         if SUPABASE_URL and SUPABASE_SERVICE_KEY:
@@ -151,6 +214,98 @@ class DiaryHandler(SimpleHTTPRequestHandler):
         request_headers.update(headers or {})
         return Request(f"{SUPABASE_URL}{path}", data=data, method=method, headers=request_headers)
 
+    def _upload_attachment(self, object_path):
+        self._require_supabase()
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise ValueError("Invalid Content-Length") from error
+
+        if length <= 0:
+            raise ValueError("Attachment is empty")
+        if length > MAX_ATTACHMENT_BYTES:
+            raise ValueError("Attachment is larger than 50 MB")
+
+        parsed = urlparse(SUPABASE_URL)
+        connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=90)
+        storage_path = (
+            f"/storage/v1/object/{quote(SUPABASE_BUCKET, safe='')}/"
+            f"{quote(object_path, safe='/')}"
+        )
+
+        try:
+            connection.putrequest("POST", storage_path)
+            connection.putheader("apikey", SUPABASE_SERVICE_KEY)
+            connection.putheader("Authorization", f"Bearer {SUPABASE_SERVICE_KEY}")
+            connection.putheader("Content-Type", self.headers.get("Content-Type", "application/octet-stream"))
+            connection.putheader("Content-Length", str(length))
+            connection.putheader("x-upsert", "false")
+            connection.endheaders()
+
+            remaining = length
+            while remaining:
+                chunk = self.rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise RuntimeError("Attachment upload was interrupted")
+                connection.send(chunk)
+                remaining -= len(chunk)
+
+            response = connection.getresponse()
+            response.read()
+            if not 200 <= response.status < 300:
+                raise RuntimeError(f"Supabase attachment upload failed ({response.status})")
+        except OSError as error:
+            raise RuntimeError("Supabase attachment upload failed") from error
+        finally:
+            connection.close()
+
+    def _create_attachment_url(self, object_path):
+        self._require_supabase()
+        data = json.dumps({"expiresIn": 600}).encode("utf-8")
+        request = self._supabase_request(
+            f"/storage/v1/object/sign/{quote(SUPABASE_BUCKET, safe='')}/{quote(object_path, safe='/')}",
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=20) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            raise RuntimeError(f"Supabase attachment access failed ({error.code})") from error
+        except (URLError, json.JSONDecodeError) as error:
+            raise RuntimeError("Supabase attachment access failed") from error
+
+        signed_url = value.get("signedURL") or value.get("signedUrl")
+        if not signed_url:
+            raise RuntimeError("Supabase did not return an attachment URL")
+        if signed_url.startswith("http"):
+            return signed_url
+        if signed_url.startswith("/storage/v1"):
+            return f"{SUPABASE_URL}{signed_url}"
+        return f"{SUPABASE_URL}/storage/v1{signed_url}"
+
+    def _delete_attachment(self, object_path):
+        self._require_supabase()
+        data = json.dumps({"prefixes": [object_path]}).encode("utf-8")
+        request = self._supabase_request(
+            f"/storage/v1/object/{quote(SUPABASE_BUCKET, safe='')}",
+            data=data,
+            method="DELETE",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=20):
+                return
+        except HTTPError as error:
+            raise RuntimeError(f"Supabase attachment delete failed ({error.code})") from error
+        except URLError as error:
+            raise RuntimeError("Supabase attachment delete failed") from error
+
+    def _require_supabase(self):
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            raise RuntimeError("Supabase attachment storage is not configured")
+
     def _authorize_write(self, stored):
         access_key = self.headers.get("X-Diary-Key", "")
         if not access_key:
@@ -208,7 +363,7 @@ class DiaryHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Diary-Key, X-Diary-Version")
 
 
