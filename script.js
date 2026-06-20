@@ -40,6 +40,7 @@ const clearEntries = document.querySelector("#clearEntries");
 const template = document.querySelector("#entryTemplate");
 
 let cryptoKey = null;
+let accessKey = null;
 let entries = [];
 let selectedImages = [];
 let attachedLinks = [];
@@ -75,6 +76,7 @@ loginForm.addEventListener("submit", async (event) => {
 
     if (currentVault.auth) {
       cryptoKey = await unlockKey(password, currentVault.auth);
+      accessKey = await deriveAccessKey(password, currentVault.auth.salt);
       await loadEntries();
 
       if (!currentVault.updatedAt) {
@@ -83,6 +85,7 @@ loginForm.addEventListener("submit", async (event) => {
     } else {
       const created = await createPassword(password);
       cryptoKey = created.key;
+      accessKey = await deriveAccessKey(password, created.auth.salt);
       currentVault.auth = created.auth;
       entries = [];
       await saveEntries();
@@ -92,6 +95,7 @@ loginForm.addEventListener("submit", async (event) => {
     showDiary();
   } catch (error) {
     cryptoKey = null;
+    accessKey = null;
     loginMessage.textContent = error.message?.startsWith("无法")
       ? error.message
       : "密码不正确，无法打开日记。";
@@ -263,6 +267,14 @@ async function deriveKey(password, saltBase64) {
   );
 }
 
+async function deriveAccessKey(password, saltBase64) {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`private-diary:${saltBase64}:${password}`)
+  );
+  return bytesToBase64(new Uint8Array(digest));
+}
+
 async function loadEntries() {
   const payload = currentVault.entries;
 
@@ -305,10 +317,16 @@ async function saveVaultToServer() {
   const response = await fetch(apiEndpoint, {
     method: "PUT",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "X-Diary-Key": accessKey,
+      "X-Diary-Version": currentVault.updatedAt || ""
     },
     body: JSON.stringify(payload)
   });
+
+  if (response.status === 409) {
+    throw new Error("服务器内容已被其他设备更新，请刷新页面后再保存。");
+  }
 
   if (!response.ok) {
     throw new Error("无法保存到服务器。请检查服务器是否正在运行。");
@@ -575,18 +593,20 @@ function updateSaveStatus(message) {
 }
 
 async function readImageFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      resolve({
-        id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${file.name}`,
-        name: file.name,
-        data: reader.result
-      });
-    });
-    reader.addEventListener("error", reject);
-    reader.readAsDataURL(file);
-  });
+  const bitmap = await createImageBitmap(file);
+  const maxDimension = 1920;
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+
+  return {
+    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${file.name}`,
+    name: file.name,
+    data: canvas.toDataURL("image/jpeg", 0.82)
+  };
 }
 
 async function encryptJson(key, value) {
@@ -624,6 +644,7 @@ function showDiary() {
 function lockDiary() {
   stopAutoRefresh();
   cryptoKey = null;
+  accessKey = null;
   entries = [];
   selectedImages = [];
   attachedLinks = [];

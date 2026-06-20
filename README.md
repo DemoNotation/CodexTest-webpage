@@ -55,9 +55,23 @@ http://电脑的局域网 IP:8000
 2. 选择 New Project > Deploy from GitHub repo。
 3. 选择 `DemoNotation/CodexTest-webpage` 仓库。
 4. Railway 会读取 `railway.json`，启动命令是 `python server.py`。
-5. 在服务里添加一个 Volume，挂载路径可以使用 Railway 默认路径；服务器会自动读取 `RAILWAY_VOLUME_MOUNT_PATH` 保存日记数据。
-6. 在 Networking / Public Networking 里生成公网域名。
-7. 打开 Railway 给你的 `https://...up.railway.app` 地址。
+5. 在 Supabase 创建一个名为 `private-diary` 的私有 Storage bucket。
+6. 在 Railway 服务的 Variables 中添加 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。
+7. 在 Networking / Public Networking 里生成公网域名并打开网址。
+
+### Supabase 免费存储
+
+1. 在 Supabase 创建项目。
+2. 打开 Storage，创建私有 bucket，名称必须是 `private-diary`。
+3. 在 Project Settings > API 中复制 Project URL 和旧版 `service_role` JWT key。
+4. 在 Railway 的 `web` 服务中打开 Variables，添加：
+
+```text
+SUPABASE_URL=https://你的项目编号.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=你的 service_role JWT key
+```
+
+`service_role` 是服务器密钥，只能保存在 Railway Variables 中，不要放进网页或 GitHub。
 
 部署要求：
 
