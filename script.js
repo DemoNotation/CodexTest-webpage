@@ -47,6 +47,7 @@ const dialogEntryContent = document.querySelector("#dialogEntryContent");
 const dialogEntryImages = document.querySelector("#dialogEntryImages");
 const dialogEntryAttachments = document.querySelector("#dialogEntryAttachments");
 const dialogAttachmentList = document.querySelector("#dialogAttachmentList");
+const dialogEntryLinkSection = document.querySelector("#dialogEntryLinkSection");
 const dialogEntryLinks = document.querySelector("#dialogEntryLinks");
 
 let cryptoKey = null;
@@ -211,6 +212,10 @@ diaryForm.addEventListener("submit", async (event) => {
   if (uploadInProgress) {
     updateSaveStatus("请等待附件上传完成后再保存。");
     return;
+  }
+
+  if (linkTitle.value.trim() || linkUrl.value.trim()) {
+    addAttachedLink();
   }
 
   const savedAt = new Date().toISOString();
@@ -473,12 +478,74 @@ function normalizeEntries(value) {
     attachments: Array.isArray(entry.attachments)
       ? entry.attachments.filter((attachment) => attachment?.id && attachment?.path)
       : [],
-    links: Array.isArray(entry.links) ? entry.links : [],
+    links: normalizeLinks(entry.links),
     createdAt: entry.createdAt || new Date().toISOString(),
     updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString()
   }));
 }
 
+function normalizeLinks(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((link) => {
+    if (typeof link === "string") {
+      const text = link.trim();
+      return { title: text, url: text };
+    }
+
+    const url = String(link?.url || link?.href || "").trim();
+    const title = String(link?.title || link?.name || url).trim();
+    return { title, url };
+  }).filter((link) => link.title || link.url);
+}
+
+function normalizeLinkHref(value) {
+  const text = String(value || "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(text) ? text : "https://" + text;
+
+  try {
+    const url = new URL(candidate);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function createDetailLink(link) {
+  const href = normalizeLinkHref(link.url);
+  const item = document.createElement(href ? "a" : "div");
+  item.className = "detail-link-item";
+
+  if (href) {
+    item.href = href;
+    item.target = "_blank";
+    item.rel = "noopener noreferrer";
+  }
+
+  const text = document.createElement("span");
+  text.className = "detail-link-text";
+
+  const title = document.createElement("strong");
+  title.textContent = link.title || link.url || "未命名链接";
+
+  const address = document.createElement("small");
+  address.textContent = link.url || "未填写网址";
+
+  const action = document.createElement("span");
+  action.className = "detail-link-action";
+  action.textContent = href ? "打开 ↗" : "网址无效";
+
+  text.append(title, address);
+  item.append(text, action);
+  return item;
+}
 async function refreshFromServer() {
   if (!cryptoKey || isRefreshing) {
     return;
@@ -592,17 +659,12 @@ async function showEntryDetails(id) {
   });
 
   entry.links.forEach((link) => {
-    const anchor = document.createElement("a");
-    anchor.href = link.url || "#";
-    anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
-    anchor.textContent = link.title || link.url;
-    dialogEntryLinks.append(anchor);
+    dialogEntryLinks.append(createDetailLink(link));
   });
 
   dialogEntryImages.hidden = entry.images.length === 0;
   dialogEntryAttachments.hidden = entry.attachments.length === 0;
-  dialogEntryLinks.hidden = entry.links.length === 0;
+  dialogEntryLinkSection.hidden = entry.links.length === 0;
   entryDialog.showModal();
 
   for (const attachment of entry.attachments) {
