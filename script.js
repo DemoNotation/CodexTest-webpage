@@ -173,6 +173,18 @@ linkList.addEventListener("click", (event) => {
   renderAttachedLinks();
 });
 
+linkList.addEventListener("input", (event) => {
+  const input = event.target.closest(".attached-link-input");
+
+  if (!input) {
+    return;
+  }
+
+  attachedLinks = attachedLinks.map((link) => link.id === input.dataset.id
+    ? { ...link, [input.dataset.field]: input.value }
+    : link);
+});
+
 imagePreview.addEventListener("click", (event) => {
   const button = event.target.closest(".remove-image-button");
 
@@ -1163,8 +1175,12 @@ function renderAttachedLinks() {
     const item = document.createElement("div");
     item.className = "attached-link";
 
-    const text = document.createElement("span");
-    text.textContent = `${link.title}${link.url ? ` · ${link.url}` : ""}`;
+    const fields = document.createElement("div");
+    fields.className = "attached-link-fields";
+    fields.append(
+      createAttachedLinkField(link, "title", "链接名称", "水费账户"),
+      createAttachedLinkField(link, "url", "网址", "https://...")
+    );
 
     const button = document.createElement("button");
     button.className = "remove-link-button";
@@ -1172,11 +1188,33 @@ function renderAttachedLinks() {
     button.dataset.id = link.id;
     button.textContent = "移除";
 
-    item.append(text, button);
+    item.append(fields, button);
     linkList.append(item);
   });
 }
 
+function createAttachedLinkField(link, field, labelText, placeholder) {
+  const label = document.createElement("label");
+  label.className = "attached-link-field";
+
+  const text = document.createElement("span");
+  text.textContent = labelText;
+
+  const input = document.createElement("input");
+  input.className = "attached-link-input";
+  input.type = field === "url" ? "url" : "text";
+  input.value = link[field] || "";
+  input.placeholder = placeholder;
+  input.dataset.id = link.id;
+  input.dataset.field = field;
+
+  if (field === "title") {
+    input.maxLength = 60;
+  }
+
+  label.append(text, input);
+  return label;
+}
 function updateCategoryOptions() {
   const selectedCategory = filterCategory.value;
   const categories = getCategories();
