@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>我的私人日记</title>
+  <title>日记本</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <section class="login-view" id="loginView" aria-labelledby="loginTitle">
       <div class="login-panel">
         <p class="eyebrow">Private Diary</p>
-        <h1 id="loginTitle">我的私人日记</h1>
+        <h1 id="loginTitle">日记本</h1>
         <p class="login-note" id="loginNote">第一次使用时，请设置一个密码。之后需要输入这个密码才能查看日记。</p>
 
         <form class="login-form" id="loginForm">
@@ -27,12 +27,13 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Personal Journal</p>
-          <h1>我的日记</h1>
+          <h1>日记本</h1>
         </div>
         <div class="top-actions">
           <p class="sync-summary" id="syncStatus">本机保存</p>
-          <p class="summary"><span id="entryCount">0</span> 篇</p>
-          <button class="ghost-button" id="logoutButton" type="button">锁定</button>
+          <button class="summary" id="entrySummaryButton" type="button"><span id="entryCount">0</span> 篇</button>
+          <button class="ghost-button" id="changePasswordButton" type="button">修改密码</button>
+          <button class="ghost-button" id="logoutButton" type="button">退出登录</button>
         </div>
       </header>
 
@@ -50,13 +51,17 @@
             </div>
             <div class="field">
               <label for="entryMood">心情</label>
-              <select id="entryMood">
-                <option value="平静">平静</option>
-                <option value="开心">开心</option>
-                <option value="忙碌">忙碌</option>
-                <option value="疲惫">疲惫</option>
-                <option value="难忘">难忘</option>
-              </select>
+              <input id="entryMood" type="text" maxlength="16" list="moodOptions" value="平静" placeholder="平静、开心、紧张...">
+              <datalist id="moodOptions">
+                <option value="平静"></option>
+                <option value="开心"></option>
+                <option value="忙碌"></option>
+                <option value="疲惫"></option>
+                <option value="难忘"></option>
+                <option value="期待"></option>
+                <option value="焦虑"></option>
+                <option value="感恩"></option>
+              </datalist>
             </div>
           </div>
 
@@ -78,6 +83,14 @@
 
           <div class="image-preview-grid" id="imagePreview" hidden></div>
           <div class="attachment-editor-list" id="attachmentEditorList"></div>
+
+          <section class="related-editor" aria-label="关联日记">
+            <div class="section-heading">
+              <h3>关联日记</h3>
+              <button class="ghost-button compact-button" id="openRelatedPicker" type="button">选择</button>
+            </div>
+            <div class="related-selected-list" id="relatedSelectedList"></div>
+          </section>
 
           <section class="link-editor" aria-label="链接附件">
             <div class="form-row">
@@ -109,11 +122,27 @@
           <div class="filters" aria-label="筛选日记">
             <input id="searchInput" type="search" placeholder="搜索标题、内容、分类或链接">
             <div class="form-row">
-              <input id="filterDate" type="date" aria-label="按日期筛选">
+              <input id="filterDate" type="date" aria-label="按单日筛选">
               <select id="filterCategory" aria-label="按分类筛选">
                 <option value="">全部分类</option>
               </select>
             </div>
+            <div class="form-row">
+              <input id="filterDateFrom" type="date" aria-label="开始日期">
+              <input id="filterDateTo" type="date" aria-label="结束日期">
+            </div>
+            <select id="filterAttachmentType" aria-label="按附件类型筛选">
+              <option value="">全部附件类型</option>
+              <option value="image">图片</option>
+              <option value="video">视频</option>
+              <option value="audio">音频</option>
+              <option value="pdf">PDF</option>
+              <option value="doc">Word</option>
+              <option value="sheet">Excel / CSV</option>
+              <option value="ppt">PowerPoint</option>
+              <option value="text">文本</option>
+              <option value="other">其他附件</option>
+            </select>
           </div>
           <div class="entries-list" id="entriesList"></div>
         </section>
@@ -128,9 +157,16 @@
           <div class="entry-meta" id="dialogEntryMeta"></div>
           <h2 id="dialogEntryTitle"></h2>
         </div>
-        <button class="dialog-close-button" id="closeEntryDialog" type="button" aria-label="关闭日记详情">×</button>
+        <div class="dialog-header-actions">
+          <button class="ghost-button compact-button" id="dialogEditEntry" type="button">编辑</button>
+          <button class="dialog-close-button" id="closeEntryDialog" type="button" aria-label="关闭日记详情">×</button>
+        </div>
       </header>
       <p class="entry-dialog-content" id="dialogEntryContent"></p>
+      <section class="entry-dialog-related" id="dialogEntryRelated" hidden>
+        <h3>关联日记</h3>
+        <div class="related-view-list" id="dialogRelatedList"></div>
+      </section>
       <div class="entry-dialog-images" id="dialogEntryImages"></div>
       <section class="entry-dialog-attachments" id="dialogEntryAttachments" hidden>
         <h3>附件</h3>
@@ -140,6 +176,68 @@
         <h3>相关链接</h3>
         <div class="entry-dialog-links" id="dialogEntryLinks"></div>
       </section>
+    </article>
+  </dialog>
+
+  <dialog class="entry-dialog directory-dialog" id="directoryDialog" aria-labelledby="directoryTitle">
+    <article class="entry-dialog-panel">
+      <header class="entry-dialog-header">
+        <div>
+          <div class="entry-meta">全部日记</div>
+          <h2 id="directoryTitle">日记目录</h2>
+        </div>
+        <button class="dialog-close-button" id="closeDirectoryDialog" type="button" aria-label="关闭日记目录">×</button>
+      </header>
+      <div class="directory-list" id="directoryList"></div>
+    </article>
+  </dialog>
+
+  <dialog class="entry-dialog picker-dialog" id="relatedPickerDialog" aria-labelledby="relatedPickerTitle">
+    <article class="entry-dialog-panel">
+      <header class="entry-dialog-header">
+        <div>
+          <div class="entry-meta">建立事情脉络</div>
+          <h2 id="relatedPickerTitle">选择关联日记</h2>
+        </div>
+        <button class="dialog-close-button" id="closeRelatedPicker" type="button" aria-label="关闭关联日记选择">×</button>
+      </header>
+      <input id="relatedSearchInput" type="search" placeholder="搜索标题、内容、分类或附件">
+      <div class="related-picker-list" id="relatedPickerList"></div>
+      <div class="form-actions dialog-actions">
+        <button class="primary-button" id="saveRelatedSelection" type="button">保存关联</button>
+        <button class="ghost-button" id="cancelRelatedSelection" type="button">取消</button>
+      </div>
+    </article>
+  </dialog>
+
+  <dialog class="entry-dialog password-dialog" id="passwordDialog" aria-labelledby="passwordDialogTitle">
+    <article class="entry-dialog-panel">
+      <header class="entry-dialog-header">
+        <div>
+          <div class="entry-meta">账号安全</div>
+          <h2 id="passwordDialogTitle">修改密码</h2>
+        </div>
+        <button class="dialog-close-button" id="closePasswordDialog" type="button" aria-label="关闭修改密码">×</button>
+      </header>
+      <form class="password-form" id="passwordForm">
+        <div class="field">
+          <label for="oldPasswordInput">当前密码</label>
+          <input id="oldPasswordInput" type="password" autocomplete="current-password" minlength="6" required>
+        </div>
+        <div class="field">
+          <label for="newPasswordInput">新密码</label>
+          <input id="newPasswordInput" type="password" autocomplete="new-password" minlength="6" required>
+        </div>
+        <div class="field">
+          <label for="confirmPasswordInput">确认新密码</label>
+          <input id="confirmPasswordInput" type="password" autocomplete="new-password" minlength="6" required>
+        </div>
+        <p class="save-status" id="passwordStatus" role="status"></p>
+        <div class="form-actions dialog-actions">
+          <button class="primary-button" id="savePasswordButton" type="submit">保存新密码</button>
+          <button class="ghost-button" id="cancelPasswordButton" type="button">取消</button>
+        </div>
+      </form>
     </article>
   </dialog>
 

@@ -62,7 +62,7 @@ class DiaryHandler(SimpleHTTPRequestHandler):
             if expected_version != stored_version:
                 raise VaultConflictError("Diary was updated on another device")
 
-            vault["accessKeyHash"] = stored.get("accessKeyHash") or self._access_key_hash()
+            vault["accessKeyHash"] = self._new_access_key_hash() or stored.get("accessKeyHash") or self._access_key_hash()
             self._write_vault(vault)
             self._send_json(self._public_vault(vault))
         except ValueError as error:
@@ -319,6 +319,12 @@ class DiaryHandler(SimpleHTTPRequestHandler):
         access_key = self.headers.get("X-Diary-Key", "")
         return hashlib.sha256(access_key.encode("utf-8")).hexdigest()
 
+    def _new_access_key_hash(self):
+        access_key = self.headers.get("X-Diary-New-Key", "")
+        if not access_key:
+            return ""
+        return hashlib.sha256(access_key.encode("utf-8")).hexdigest()
+
     def _empty_vault(self):
         return {"auth": None, "entries": None, "updatedAt": None, "accessKeyHash": None}
 
@@ -364,7 +370,7 @@ class DiaryHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Diary-Key, X-Diary-Version")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Diary-Key, X-Diary-New-Key, X-Diary-Version")
 
 
 def main():

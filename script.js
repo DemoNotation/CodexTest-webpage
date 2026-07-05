@@ -13,6 +13,7 @@ const loginMessage = document.querySelector("#loginMessage");
 const passwordInput = document.querySelector("#passwordInput");
 const loginButton = document.querySelector("#loginButton");
 const logoutButton = document.querySelector("#logoutButton");
+const changePasswordButton = document.querySelector("#changePasswordButton");
 const syncStatus = document.querySelector("#syncStatus");
 
 const diaryForm = document.querySelector("#diaryForm");
@@ -34,13 +35,18 @@ const cancelEditButton = document.querySelector("#cancelEditButton");
 const saveStatus = document.querySelector("#saveStatus");
 const searchInput = document.querySelector("#searchInput");
 const filterDate = document.querySelector("#filterDate");
+const filterDateFrom = document.querySelector("#filterDateFrom");
+const filterDateTo = document.querySelector("#filterDateTo");
 const filterCategory = document.querySelector("#filterCategory");
+const filterAttachmentType = document.querySelector("#filterAttachmentType");
 const entriesList = document.querySelector("#entriesList");
 const entryCount = document.querySelector("#entryCount");
+const entrySummaryButton = document.querySelector("#entrySummaryButton");
 const clearEntries = document.querySelector("#clearEntries");
 const template = document.querySelector("#entryTemplate");
 const entryDialog = document.querySelector("#entryDialog");
 const closeEntryDialog = document.querySelector("#closeEntryDialog");
+const dialogEditEntry = document.querySelector("#dialogEditEntry");
 const dialogEntryMeta = document.querySelector("#dialogEntryMeta");
 const dialogEntryTitle = document.querySelector("#dialogEntryTitle");
 const dialogEntryContent = document.querySelector("#dialogEntryContent");
@@ -49,6 +55,28 @@ const dialogEntryAttachments = document.querySelector("#dialogEntryAttachments")
 const dialogAttachmentList = document.querySelector("#dialogAttachmentList");
 const dialogEntryLinkSection = document.querySelector("#dialogEntryLinkSection");
 const dialogEntryLinks = document.querySelector("#dialogEntryLinks");
+const dialogEntryRelated = document.querySelector("#dialogEntryRelated");
+const dialogRelatedList = document.querySelector("#dialogRelatedList");
+const relatedSelectedList = document.querySelector("#relatedSelectedList");
+const openRelatedPicker = document.querySelector("#openRelatedPicker");
+const relatedPickerDialog = document.querySelector("#relatedPickerDialog");
+const closeRelatedPicker = document.querySelector("#closeRelatedPicker");
+const relatedSearchInput = document.querySelector("#relatedSearchInput");
+const relatedPickerList = document.querySelector("#relatedPickerList");
+const saveRelatedSelection = document.querySelector("#saveRelatedSelection");
+const cancelRelatedSelection = document.querySelector("#cancelRelatedSelection");
+const directoryDialog = document.querySelector("#directoryDialog");
+const closeDirectoryDialog = document.querySelector("#closeDirectoryDialog");
+const directoryList = document.querySelector("#directoryList");
+const passwordDialog = document.querySelector("#passwordDialog");
+const passwordForm = document.querySelector("#passwordForm");
+const oldPasswordInput = document.querySelector("#oldPasswordInput");
+const newPasswordInput = document.querySelector("#newPasswordInput");
+const confirmPasswordInput = document.querySelector("#confirmPasswordInput");
+const passwordStatus = document.querySelector("#passwordStatus");
+const savePasswordButton = document.querySelector("#savePasswordButton");
+const closePasswordDialog = document.querySelector("#closePasswordDialog");
+const cancelPasswordButton = document.querySelector("#cancelPasswordButton");
 
 let cryptoKey = null;
 let accessKey = null;
@@ -56,6 +84,8 @@ let entries = [];
 let selectedImages = [];
 let selectedAttachments = [];
 let attachedLinks = [];
+let selectedRelatedEntryIds = [];
+let pickerRelatedEntryIds = new Set();
 let editingEntryId = null;
 let formEntryId = createId();
 let uploadInProgress = false;
@@ -126,6 +156,18 @@ logoutButton.addEventListener("click", async () => {
   lockDiary();
 });
 
+changePasswordButton.addEventListener("click", () => {
+  passwordForm.reset();
+  passwordStatus.textContent = "";
+  passwordDialog.showModal();
+  oldPasswordInput.focus();
+});
+
+entrySummaryButton.addEventListener("click", () => {
+  renderDirectory();
+  directoryDialog.showModal();
+});
+
 entryAttachment.addEventListener("change", async () => {
   const files = Array.from(entryAttachment.files || []);
 
@@ -161,6 +203,14 @@ entryAttachment.addEventListener("change", async () => {
 });
 
 addLinkButton.addEventListener("click", addAttachedLink);
+
+openRelatedPicker.addEventListener("click", () => {
+  pickerRelatedEntryIds = new Set(selectedRelatedEntryIds);
+  relatedSearchInput.value = "";
+  renderRelatedPicker();
+  relatedPickerDialog.showModal();
+  relatedSearchInput.focus();
+});
 
 linkList.addEventListener("click", (event) => {
   const button = event.target.closest(".remove-link-button");
@@ -235,12 +285,13 @@ diaryForm.addEventListener("submit", async (event) => {
     id: formEntryId,
     title: entryTitle.value.trim(),
     date: entryDate.value,
-    mood: entryMood.value,
+    mood: entryMood.value.trim() || "平静",
     category: entryCategory.value.trim(),
     content: entryContent.value.trim(),
     images: selectedImages,
     attachments: selectedAttachments.map(({ status, progress, ...attachment }) => attachment),
     links: attachedLinks.map(({ id, ...link }) => link),
+    relatedEntryIds: selectedRelatedEntryIds.filter((id) => id !== formEntryId),
     createdAt: savedAt,
     updatedAt: savedAt
   };
@@ -325,13 +376,100 @@ entriesList.addEventListener("click", async (event) => {
 
 closeEntryDialog.addEventListener("click", () => entryDialog.close());
 
+dialogEditEntry.addEventListener("click", () => {
+  const id = dialogEditEntry.dataset.id;
+  entryDialog.close();
+  startEditEntry(id);
+});
+
 entryDialog.addEventListener("click", (event) => {
   if (event.target === entryDialog) {
     entryDialog.close();
   }
 });
 
-[searchInput, filterDate, filterCategory].forEach((control) => {
+closeDirectoryDialog.addEventListener("click", () => directoryDialog.close());
+
+directoryDialog.addEventListener("click", (event) => {
+  if (event.target === directoryDialog) {
+    directoryDialog.close();
+    return;
+  }
+
+  const item = event.target.closest(".directory-item");
+  if (!item) {
+    return;
+  }
+
+  directoryDialog.close();
+  showEntryDetails(item.dataset.id);
+});
+
+closeRelatedPicker.addEventListener("click", () => relatedPickerDialog.close());
+cancelRelatedSelection.addEventListener("click", () => relatedPickerDialog.close());
+
+relatedPickerDialog.addEventListener("click", (event) => {
+  if (event.target === relatedPickerDialog) {
+    relatedPickerDialog.close();
+    return;
+  }
+
+  const row = event.target.closest(".related-picker-item");
+  if (!row) {
+    return;
+  }
+
+  const checkbox = row.querySelector("input[type='checkbox']");
+  if (event.target !== checkbox) {
+    checkbox.checked = !checkbox.checked;
+  }
+
+  if (checkbox.checked) {
+    pickerRelatedEntryIds.add(checkbox.value);
+  } else {
+    pickerRelatedEntryIds.delete(checkbox.value);
+  }
+});
+
+relatedSearchInput.addEventListener("input", renderRelatedPicker);
+
+saveRelatedSelection.addEventListener("click", () => {
+  selectedRelatedEntryIds = [...pickerRelatedEntryIds].filter((id) => id !== formEntryId);
+  renderSelectedRelatedEntries();
+  relatedPickerDialog.close();
+});
+
+relatedSelectedList.addEventListener("click", (event) => {
+  const button = event.target.closest(".remove-related-button");
+  if (!button) {
+    return;
+  }
+
+  selectedRelatedEntryIds = selectedRelatedEntryIds.filter((id) => id !== button.dataset.id);
+  renderSelectedRelatedEntries();
+});
+
+dialogRelatedList.addEventListener("click", (event) => {
+  const item = event.target.closest(".related-view-item");
+  if (!item) {
+    return;
+  }
+
+  showEntryDetails(item.dataset.id);
+});
+
+closePasswordDialog.addEventListener("click", () => passwordDialog.close());
+cancelPasswordButton.addEventListener("click", () => passwordDialog.close());
+
+passwordDialog.addEventListener("click", (event) => {
+  if (event.target === passwordDialog) {
+    passwordDialog.close();
+  }
+});
+
+passwordForm.addEventListener("submit", changePassword);
+
+[searchInput, filterDate, filterDateFrom, filterDateTo, filterCategory, filterAttachmentType].forEach((control) => {
   control.addEventListener("input", renderEntries);
   control.addEventListener("change", renderEntries);
 });
@@ -426,17 +564,22 @@ async function loadVaultFromServer() {
   return normalizeVault(await response.json());
 }
 
-async function saveVaultToServer() {
+async function saveVaultToServer(options = {}) {
   const payload = normalizeVault(currentVault);
   payload.updatedAt = new Date().toISOString();
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Diary-Key": options.accessKey || accessKey,
+    "X-Diary-Version": currentVault.updatedAt || ""
+  };
+
+  if (options.newAccessKey) {
+    headers["X-Diary-New-Key"] = options.newAccessKey;
+  }
 
   const response = await fetch(apiEndpoint, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Diary-Key": accessKey,
-      "X-Diary-Version": currentVault.updatedAt || ""
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -450,6 +593,64 @@ async function saveVaultToServer() {
 
   currentVault = normalizeVault(await response.json());
   saveLocalVault(currentVault);
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  passwordStatus.textContent = "";
+
+  const oldPassword = oldPasswordInput.value;
+  const newPassword = newPasswordInput.value;
+  const confirmPassword = confirmPasswordInput.value;
+
+  if (newPassword !== confirmPassword) {
+    passwordStatus.textContent = "两次输入的新密码不一致。";
+    return;
+  }
+
+  if (oldPassword === newPassword) {
+    passwordStatus.textContent = "新密码不能和当前密码相同。";
+    return;
+  }
+
+  try {
+    savePasswordButton.disabled = true;
+    const oldKey = await unlockKey(oldPassword, currentVault.auth);
+    const oldAccessKey = await deriveAccessKey(oldPassword, currentVault.auth.salt);
+    if (currentVault.entries) {
+      await decryptJson(oldKey, currentVault.entries);
+    }
+
+    const created = await createPassword(newPassword);
+    const newAccessKey = await deriveAccessKey(newPassword, created.auth.salt);
+    const oldCryptoKey = cryptoKey;
+    const oldVault = currentVault;
+
+    cryptoKey = created.key;
+    accessKey = newAccessKey;
+    currentVault = {
+      ...currentVault,
+      auth: created.auth,
+      entries: await encryptJson(created.key, entries)
+    };
+
+    try {
+      await saveVaultToServer({ accessKey: oldAccessKey, newAccessKey });
+    } catch (error) {
+      cryptoKey = oldCryptoKey;
+      accessKey = oldAccessKey;
+      currentVault = oldVault;
+      throw error;
+    }
+
+    passwordForm.reset();
+    passwordStatus.textContent = "密码已修改。下次请使用新密码登录。";
+    window.setTimeout(() => passwordDialog.close(), 800);
+  } catch (error) {
+    passwordStatus.textContent = error.message || "密码修改失败，请确认当前密码是否正确。";
+  } finally {
+    savePasswordButton.disabled = false;
+  }
 }
 
 function loadLocalVault() {
@@ -491,6 +692,9 @@ function normalizeEntries(value) {
       ? entry.attachments.filter((attachment) => attachment?.id && attachment?.path)
       : [],
     links: normalizeLinks(entry.links),
+    relatedEntryIds: Array.isArray(entry.relatedEntryIds)
+      ? [...new Set(entry.relatedEntryIds.map(String).filter(Boolean))]
+      : [],
     createdAt: entry.createdAt || new Date().toISOString(),
     updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString()
   }));
@@ -631,6 +835,7 @@ function startEditEntry(id) {
   entryContent.value = entry.content;
   selectedImages = [...entry.images];
   selectedAttachments = entry.attachments.map((attachment) => ({ ...attachment, status: "ready", progress: 100 }));
+  selectedRelatedEntryIds = [...entry.relatedEntryIds];
   originalAttachmentIds = new Set(entry.attachments.map((attachment) => attachment.id));
   newlyUploadedAttachmentIds = new Set();
   pendingAttachmentDeletes = [];
@@ -643,6 +848,7 @@ function startEditEntry(id) {
   renderImagePreview();
   renderAttachmentEditor();
   renderAttachedLinks();
+  renderSelectedRelatedEntries();
   entryTitle.focus();
 }
 
@@ -654,6 +860,7 @@ async function showEntryDetails(id) {
   }
 
   dialogEntryMeta.textContent = "";
+  dialogEditEntry.dataset.id = entry.id;
   [entry.mood, entry.category || "未分类", formatDate(entry.date)].forEach((value) => {
     const item = document.createElement("span");
     item.textContent = value;
@@ -665,6 +872,7 @@ async function showEntryDetails(id) {
   dialogEntryImages.textContent = "";
   dialogAttachmentList.textContent = "";
   dialogEntryLinks.textContent = "";
+  dialogRelatedList.textContent = "";
 
   entry.images.forEach((image, index) => {
     dialogEntryImages.append(createLegacyImagePreview(entry, image, index));
@@ -674,10 +882,18 @@ async function showEntryDetails(id) {
     dialogEntryLinks.append(createDetailLink(link));
   });
 
+  const relatedEntries = getRelatedEntries(entry);
+  relatedEntries.forEach((relatedEntry) => {
+    dialogRelatedList.append(createRelatedViewItem(relatedEntry));
+  });
+
   dialogEntryImages.hidden = entry.images.length === 0;
   dialogEntryAttachments.hidden = entry.attachments.length === 0;
   dialogEntryLinkSection.hidden = entry.links.length === 0;
-  entryDialog.showModal();
+  dialogEntryRelated.hidden = relatedEntries.length === 0;
+  if (!entryDialog.open) {
+    entryDialog.showModal();
+  }
 
   for (const attachment of entry.attachments) {
     const loading = createAttachmentLoading(attachment);
@@ -691,22 +907,174 @@ async function showEntryDetails(id) {
   }
 }
 
+function getEntryById(id) {
+  return entries.find((entry) => entry.id === id);
+}
+
+function getRelatedEntries(entry) {
+  const direct = (entry.relatedEntryIds || [])
+    .map(getEntryById)
+    .filter(Boolean);
+  const reverse = entries.filter((item) => item.id !== entry.id && item.relatedEntryIds.includes(entry.id));
+  return uniqueEntries([...direct, ...reverse]);
+}
+
+function uniqueEntries(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.id)) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function renderSelectedRelatedEntries() {
+  relatedSelectedList.textContent = "";
+  const relatedEntries = selectedRelatedEntryIds.map(getEntryById).filter(Boolean);
+
+  if (relatedEntries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "inline-empty";
+    empty.textContent = "还没有关联日记。";
+    relatedSelectedList.append(empty);
+    return;
+  }
+
+  relatedEntries.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "related-selected-item";
+
+    const info = createEntryDigest(entry);
+    const remove = document.createElement("button");
+    remove.className = "remove-related-button";
+    remove.type = "button";
+    remove.dataset.id = entry.id;
+    remove.textContent = "移除";
+
+    item.append(info, remove);
+    relatedSelectedList.append(item);
+  });
+}
+
+function renderRelatedPicker() {
+  relatedPickerList.textContent = "";
+  const query = relatedSearchInput.value.trim().toLowerCase();
+  const available = entries.filter((entry) => entry.id !== formEntryId && matchesEntryQuery(entry, query));
+
+  if (available.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state compact-empty";
+    empty.textContent = "没有可关联的日记。";
+    relatedPickerList.append(empty);
+    return;
+  }
+
+  available.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "related-picker-item";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = entry.id;
+    checkbox.checked = pickerRelatedEntryIds.has(entry.id);
+
+    item.append(checkbox, createEntryDigest(entry));
+    relatedPickerList.append(item);
+  });
+}
+
+function renderDirectory() {
+  directoryList.textContent = "";
+  const sorted = [...entries].sort((a, b) => {
+    const dateCompare = (b.date || "").localeCompare(a.date || "");
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+    return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+  });
+
+  if (sorted.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state compact-empty";
+    empty.textContent = "还没有日记。";
+    directoryList.append(empty);
+    return;
+  }
+
+  sorted.forEach((entry) => {
+    const button = document.createElement("button");
+    button.className = "directory-item";
+    button.type = "button";
+    button.dataset.id = entry.id;
+    button.append(createEntryDigest(entry, true));
+    directoryList.append(button);
+  });
+}
+
+function createRelatedViewItem(entry) {
+  const button = document.createElement("button");
+  button.className = "related-view-item";
+  button.type = "button";
+  button.dataset.id = entry.id;
+  button.append(createEntryDigest(entry, true));
+  return button;
+}
+
+function createEntryDigest(entry, includeCounts = false) {
+  const item = document.createElement("div");
+  item.className = "entry-digest";
+
+  const title = document.createElement("strong");
+  title.textContent = entry.title || "未命名日记";
+
+  const meta = document.createElement("span");
+  const parts = [formatDate(entry.date), entry.category || "未分类", entry.mood].filter(Boolean);
+  if (includeCounts) {
+    const counts = [];
+    if (entry.attachments.length) counts.push(`${entry.attachments.length} 个附件`);
+    if (entry.links.length) counts.push(`${entry.links.length} 个链接`);
+    if (entry.relatedEntryIds.length) counts.push(`${entry.relatedEntryIds.length} 个关联`);
+    parts.push(...counts);
+  }
+  meta.textContent = parts.join(" · ");
+
+  const summary = document.createElement("small");
+  summary.textContent = getEntrySummary(entry);
+
+  item.append(title, meta, summary);
+  return item;
+}
+
+function getEntrySummary(entry) {
+  const text = String(entry.content || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "没有正文摘要。";
+  }
+  return text.length > 86 ? `${text.slice(0, 86)}...` : text;
+}
+
 function resetForm() {
   editingEntryId = null;
   formEntryId = createId();
   selectedImages = [];
   selectedAttachments = [];
   attachedLinks = [];
+  selectedRelatedEntryIds = [];
+  pickerRelatedEntryIds = new Set();
   newlyUploadedAttachmentIds = new Set();
   originalAttachmentIds = new Set();
   pendingAttachmentDeletes = [];
   diaryForm.reset();
   entryDate.valueAsDate = new Date();
+  entryMood.value = "平静";
   saveEntryButton.textContent = "保存日记";
   cancelEditButton.hidden = true;
   renderImagePreview();
   renderAttachmentEditor();
   renderAttachedLinks();
+  renderSelectedRelatedEntries();
 }
 
 async function discardFormChanges() {
@@ -1244,10 +1612,21 @@ function getCategories() {
 function getFilteredEntries() {
   const query = searchInput.value.trim().toLowerCase();
   const date = filterDate.value;
+  const dateFrom = filterDateFrom.value;
+  const dateTo = filterDateTo.value;
   const category = filterCategory.value;
+  const attachmentType = filterAttachmentType.value;
 
   return entries.filter((entry) => {
     if (date && entry.date !== date) {
+      return false;
+    }
+
+    if (dateFrom && entry.date < dateFrom) {
+      return false;
+    }
+
+    if (dateTo && entry.date > dateTo) {
       return false;
     }
 
@@ -1255,21 +1634,50 @@ function getFilteredEntries() {
       return false;
     }
 
-    if (!query) {
-      return true;
+    if (attachmentType && !entry.attachments.some((attachment) => getAttachmentKind(attachment) === attachmentType)) {
+      return false;
     }
 
-    const haystack = [
-      entry.title,
-      entry.content,
-      entry.category,
-      entry.mood,
-      ...entry.attachments.map((attachment) => attachment.name),
-      ...entry.links.map((link) => `${link.title} ${link.url}`)
-    ].join(" ").toLowerCase();
-
-    return haystack.includes(query);
+    return matchesEntryQuery(entry, query);
   });
+}
+
+function matchesEntryQuery(entry, query) {
+  if (!query) {
+    return true;
+  }
+
+  const relatedText = (entry.relatedEntryIds || [])
+    .map(getEntryById)
+    .filter(Boolean)
+    .map((item) => `${item.title} ${item.date} ${item.category} ${item.content}`)
+    .join(" ");
+
+  const haystack = [
+    entry.title,
+    entry.content,
+    entry.category,
+    entry.mood,
+    ...entry.attachments.map((attachment) => `${attachment.name} ${fileTypeLabel(attachment)}`),
+    ...entry.links.map((link) => `${link.title} ${link.url}`),
+    relatedText
+  ].join(" ").toLowerCase();
+
+  return haystack.includes(query);
+}
+
+function getAttachmentKind(attachment) {
+  const type = attachment.type || "";
+  const extension = getFileExtension(attachment.name);
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  if (type === "application/pdf" || extension === "pdf") return "pdf";
+  if (["doc", "docx"].includes(extension)) return "doc";
+  if (["xls", "xlsx", "csv"].includes(extension)) return "sheet";
+  if (["ppt", "pptx"].includes(extension)) return "ppt";
+  if (isTextFile(type, extension)) return "text";
+  return "other";
 }
 
 function sortEntries() {
@@ -1406,9 +1814,17 @@ function renderEntries() {
       images.hidden = true;
     }
 
+    const summaryParts = [];
     if (entry.attachments.length > 0) {
+      summaryParts.push(`${entry.attachments.length} 个附件`);
+    }
+    if (entry.relatedEntryIds.length > 0) {
+      summaryParts.push(`${entry.relatedEntryIds.length} 个关联日记`);
+    }
+
+    if (summaryParts.length > 0) {
       attachmentSummary.hidden = false;
-      attachmentSummary.textContent = `${entry.attachments.length} 个附件`;
+      attachmentSummary.textContent = summaryParts.join(" · ");
     }
 
     entry.links.forEach((link) => {
