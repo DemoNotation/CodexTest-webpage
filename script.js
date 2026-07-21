@@ -464,7 +464,7 @@ passwordDialog.addEventListener("click", (event) => {
 
 passwordForm.addEventListener("submit", changePassword);
 
-[searchInput].forEach((control) => {
+[searchInput].filter(Boolean).forEach((control) => {
   control.addEventListener("input", renderEntries);
   control.addEventListener("change", renderEntries);
 });
@@ -1595,7 +1595,7 @@ function getCategories() {
 }
 
 function getFilteredEntries() {
-  const query = searchInput.value.trim().toLowerCase();
+  const query = (searchInput?.value || "").trim().toLowerCase();
   return entries.filter((entry) => matchesEntryQuery(entry, query));
 }
 
