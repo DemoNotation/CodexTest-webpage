@@ -678,6 +678,16 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+@media (min-width: 621px) {
+  .entry-card .entry-content {
+    display: -webkit-box;
+    max-height: 5.25em;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+}
+
 .entry-images,
 .entry-links {
   margin-top: 12px;
