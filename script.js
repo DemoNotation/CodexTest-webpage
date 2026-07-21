@@ -34,11 +34,6 @@ const saveEntryButton = document.querySelector("#saveEntryButton");
 const cancelEditButton = document.querySelector("#cancelEditButton");
 const saveStatus = document.querySelector("#saveStatus");
 const searchInput = document.querySelector("#searchInput");
-const filterDate = document.querySelector("#filterDate");
-const filterDateFrom = document.querySelector("#filterDateFrom");
-const filterDateTo = document.querySelector("#filterDateTo");
-const filterCategory = document.querySelector("#filterCategory");
-const filterAttachmentType = document.querySelector("#filterAttachmentType");
 const entriesList = document.querySelector("#entriesList");
 const entryCount = document.querySelector("#entryCount");
 const entrySummaryButton = document.querySelector("#entrySummaryButton");
@@ -469,7 +464,7 @@ passwordDialog.addEventListener("click", (event) => {
 
 passwordForm.addEventListener("submit", changePassword);
 
-[searchInput, filterDate, filterDateFrom, filterDateTo, filterCategory, filterAttachmentType].forEach((control) => {
+[searchInput].forEach((control) => {
   control.addEventListener("input", renderEntries);
   control.addEventListener("change", renderEntries);
 });
@@ -1584,25 +1579,15 @@ function createAttachedLinkField(link, field, labelText, placeholder) {
   return label;
 }
 function updateCategoryOptions() {
-  const selectedCategory = filterCategory.value;
   const categories = getCategories();
   categoryOptions.textContent = "";
-  filterCategory.textContent = "";
-
-  const all = document.createElement("option");
-  all.value = "";
-  all.textContent = "全部分类";
-  filterCategory.append(all);
 
   categories.forEach((category) => {
     const option = document.createElement("option");
     option.value = category;
     option.textContent = category;
     categoryOptions.append(option.cloneNode(true));
-    filterCategory.append(option);
   });
-
-  filterCategory.value = categories.includes(selectedCategory) ? selectedCategory : "";
 }
 
 function getCategories() {
@@ -1611,35 +1596,7 @@ function getCategories() {
 
 function getFilteredEntries() {
   const query = searchInput.value.trim().toLowerCase();
-  const date = filterDate.value;
-  const dateFrom = filterDateFrom.value;
-  const dateTo = filterDateTo.value;
-  const category = filterCategory.value;
-  const attachmentType = filterAttachmentType.value;
-
-  return entries.filter((entry) => {
-    if (date && entry.date !== date) {
-      return false;
-    }
-
-    if (dateFrom && entry.date < dateFrom) {
-      return false;
-    }
-
-    if (dateTo && entry.date > dateTo) {
-      return false;
-    }
-
-    if (category && entry.category !== category) {
-      return false;
-    }
-
-    if (attachmentType && !entry.attachments.some((attachment) => getAttachmentKind(attachment) === attachmentType)) {
-      return false;
-    }
-
-    return matchesEntryQuery(entry, query);
-  });
+  return entries.filter((entry) => matchesEntryQuery(entry, query));
 }
 
 function matchesEntryQuery(entry, query) {
@@ -1664,20 +1621,6 @@ function matchesEntryQuery(entry, query) {
   ].join(" ").toLowerCase();
 
   return haystack.includes(query);
-}
-
-function getAttachmentKind(attachment) {
-  const type = attachment.type || "";
-  const extension = getFileExtension(attachment.name);
-  if (type.startsWith("image/")) return "image";
-  if (type.startsWith("video/")) return "video";
-  if (type.startsWith("audio/")) return "audio";
-  if (type === "application/pdf" || extension === "pdf") return "pdf";
-  if (["doc", "docx"].includes(extension)) return "doc";
-  if (["xls", "xlsx", "csv"].includes(extension)) return "sheet";
-  if (["ppt", "pptx"].includes(extension)) return "ppt";
-  if (isTextFile(type, extension)) return "text";
-  return "other";
 }
 
 function sortEntries() {
