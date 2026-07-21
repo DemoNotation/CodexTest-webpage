@@ -114,7 +114,11 @@ h1 {
 }
 
 .diary-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   padding: 32px 0 42px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -173,6 +177,8 @@ button.summary:hover {
   grid-template-columns: 390px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+  min-height: 0;
+  flex: 1;
 }
 
 .diary-form,
@@ -184,10 +190,11 @@ button.summary:hover {
 }
 
 .diary-form {
-  position: sticky;
-  top: 20px;
   display: grid;
   gap: 18px;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 22px;
 }
 
@@ -571,7 +578,10 @@ textarea:focus {
 }
 
 .entries-panel {
-  min-height: 620px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -596,7 +606,11 @@ h2 {
 
 .entries-list {
   display: grid;
+  align-content: start;
   gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px;
 }
 
@@ -1000,12 +1014,28 @@ h2 {
 }
 
 @media (max-width: 920px) {
+  .diary-view {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .diary-form {
-    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .entries-panel {
+    max-height: none;
+  }
+
+  .entries-list {
+    overflow: visible;
   }
 }
 
